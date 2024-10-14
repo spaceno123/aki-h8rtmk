@@ -1,0 +1,70 @@
+;
+;	Program MACHINE.MAR
+;	Date 1998/8/15 .. 1998/8/15
+;	Copyright (C) 1998 by AKIYA
+;
+	.section	P, CODE, ALIGN=2
+
+	.export	_set_ccr
+_set_ccr:
+	ldc.b	r0l,ccr
+	rts
+
+	.export	_get_ccr
+_get_ccr:
+	stc.w	ccr,@-sp	; for
+	mov.b	#0,r0h		; ccr
+	ldc.w	@sp+,ccr	; keep !
+	stc.b	ccr,r0l
+	rts
+
+	.export	_and_ccr
+_and_ccr:
+	stc.b	ccr,r0h
+	and.b	r0l,r0h
+	ldc.b	r0h,ccr
+	rts
+
+	.export	_or_ccr
+_or_ccr:
+	stc.b	ccr,r0h
+	or.b	r0l,r0h
+	ldc.b	r0h,ccr
+	rts
+
+	.export	_xor_ccr
+_xor_ccr:
+	stc.b	ccr,r0h
+	xor.b	r0l,r0h
+	ldc.b	r0h,ccr
+	rts
+
+	.export	_get_and_ccr
+_get_and_ccr:
+	stc.b	ccr,r0h
+	and.b	r0h,r0l
+	ldc.b	r0l,ccr
+	mov.b	r0h,r0l
+	extu.w	r0
+	rts
+
+	.export	_get_or_ccr
+_get_or_ccr:
+	stc.b	ccr,r0h
+	or.b	r0h,r0l
+	ldc.b	r0l,ccr
+	mov.b	r0h,r0l
+	extu.w	r0
+	rts
+
+	.export	_get_xor_ccr
+_get_xor_ccr:
+	stc.b	ccr,r0h
+	xor.b	r0l,r0h
+	ldc.b	r0h,ccr
+	xor.b	r0h,r0l
+	extu.w	r0
+	rts
+
+	.end
+

@@ -1,0 +1,38 @@
+;
+;	Program	DBGLIB.MAR
+;	Date	1998/9/3 .. 1998/9/3
+;	Copyright (C) 1998 by AKIYA
+;
+
+	.section	P, CODE, ALIGN=2
+
+	.import	dbg_getc
+	.export	_dbg_getc
+_dbg_getc:	; int dbg_getc( void )
+	mov.b	#0,r0h
+	jsr	@dbg_getc
+	bcs	_dbg_getc_1:8	; ok !
+	beq	_dbg_putc_0:8	; debugger active !
+_dbg_getc_0
+	mov.w	#-1,r0	;(buffer empty or full)
+_dbg_getc_1
+	rts
+
+	.import	dbg_putc
+	.export	_dbg_putc
+_dbg_putc:	; int dbg_putc( char )
+	mov.b	#0,r0h
+	jsr	@dbg_putc
+	bcs	_dbg_getc_1:8	; ok !
+	bne	_dbg_getc_0:8	; buffer full !
+_dbg_putc_0
+	mov.w	#-2,r0	;(debuger active)
+	rts
+
+	.import	dbg_mode_in
+	.export	_dbg_mode_in
+_dbg_mode_in:
+	jmp	@dbg_mode_in
+
+	.end
+

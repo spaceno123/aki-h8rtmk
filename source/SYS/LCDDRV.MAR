@@ -1,0 +1,557 @@
+;
+;	Program	LCDDRV.MAR
+;	Date	1998/8/11 .. 1998/9/6
+;	Copyright (C) 1998 by AKIYA
+;
+;--- up date ---
+; 1998/10/11 ?	CR LF support
+; 1998/10/25 ?	ESC cursor set support
+; 1999/1/31 ?	CG RAM support
+; 2000/2/27	katakana support
+
+	.include	"include\ioregs.h"
+
+	;//////////////////
+	;/// lcd assign ///
+	;//////////////////
+
+LCD_DB4	.bequ	0,P3DR
+LCD_DB5	.bequ	1,P3DR
+LCD_DB6	.bequ	2,P3DR
+LCD_DB7	.bequ	3,P3DR
+LCD_RS	.bequ	4,P3DR
+LCD_E	.bequ	5,P3DR
+
+	;//////////////////
+	;/// LCD BUFFER ///
+	;//////////////////
+
+	.section	B, DATA, ALIGN=2
+
+lcd_buf_t
+lcd_csr		.res.b	1
+lcd_mod		.res.b	1
+lcd_esc		.res.b	1
+lcd_buf		.res.b	1
+lcd_buf_1	.res.b	40
+lcd_buf_2	.res.b	40
+lcd_buf_e
+
+	.section	P, CODE, ALIGN=2
+
+	.import	_dly_tsk
+
+	;///////////
+	;/// LCD ///
+	;///////////
+
+;- lcd initialize -
+; entry	 none.
+; return r0 = 0:ok,other:error code
+; break	 er0,er1
+; stack	 (4)+6+dly_tsk()
+	.export	_lcd_ini
+_lcd_ini:	; ER lcd_ini( void )
+	sub.l	er0,er0			; wait 15msec
+	mov.b	#15+1,r0l		; +1 for interrupt timing
+	jsr	@_dly_tsk		;bsr	wait_n_msec
+	mov.w	r0,r0
+	beq	_lcd_ini_1:8		; ok !
+_lcd_ini_0
+	rts
+_lcd_ini_1
+	bsr	lcd_cd4_ini
+	sub.l	er0,er0			; wait 4msec
+	mov.b	#4+1,r0l		; +1 for interrupt timing
+	jsr	@_dly_tsk		;bsr	wait_n_msec
+	mov.w	r0,r0
+	bne	_lcd_ini_0:8		; error !
+	bsr	lcd_cd4_ini
+	bsr	lcd_cd4_wai		; wait 100usec
+	bsr	lcd_cd4_ini
+	mov.b	#B'0010,r0l
+	bsr	lcd_cd4
+	mov.b	#B'00101000,r0l		; 4bit,2line,5x7
+	bsr	lcd_cd8
+;-	bcs	_lcd_ini_0:8		;- command >= 4 !
+	mov.b	#B'00001000,r0l		; off
+	bsr	lcd_cd8
+;-	bcs	_lcd_ini_0:8		;- command >= 4 !
+	mov.b	#B'00000001,r0l		; clear
+	bsr	lcd_cd8
+	bcs	_lcd_ini_0:8		; error !
+	mov.b	#B'00001100,r0l		; display on
+	bsr	lcd_cd8
+;-	bcs	_lcd_ini_0:8		;- command >= 4 !
+	;* buffer clear *
+	mov.l	#lcd_buf_e,er1
+	mov.b	#lcd_buf_e-lcd_buf_1,r0h
+	mov.b	#" ",r0l
+_lcd_ini_2
+	mov.b	r0l,@-er1
+	dec.b	r0h
+	bne	_lcd_ini_2:8
+	mov.b	#0,r0l
+	mov.b	r0l,@-er1	; lcd_buf
+	mov.b	r0l,@-er1	; lcd_esc
+	mov.b	r0l,@-er1	; lcd_mod
+	mov.b	r0l,@-er1	; lcd_csr
+	rts	; r0 = 0
+
+;- lcd initialize -
+; entry	 none.
+; return none.
+; break	 r0l
+; stack	 (4)
+lcd_cd4_ini:
+	mov.b	#B'0011,r0l		; next continue !
+
+;- lcd command 4bit -
+; entry	 r0l = data
+; return none.
+; break	 r0l
+; stack	 (4)
+lcd_cd4:
+	bclr	LCD_RS			; RS=0
+	bld	#0,r0l
+	bst	LCD_DB4
+	bld	#1,r0l
+	bst	LCD_DB5
+	bset	LCD_E			; E =1
+	bld	#2,r0l
+	bst	LCD_DB6
+	bld	#3,r0l
+	bst	LCD_DB7
+	bclr	LCD_E			; E =0
+	;* wait 50 usec *		; next continue !
+
+;- lcd command 4bit wait 50usec -
+; entry	 none.
+; return none.
+; break	 r0l
+; stack	 (4)
+lcd_cd4_wai
+	mov.b	#(50*1000/125)/3,r0l	; 2 state = 125 usec at 16MHz
+lcd_cd4_0
+	dec.b	r0l			; 1 cycle 2 state
+	bne	lcd_cd4_0:8		; 2 cycle 4 state
+	rts
+
+;- lcd data 8bit -
+; entry	 r0l = data
+; return cary = 0:ok,1:ng(r0=error code)
+; break	 r0,er1
+; stack	 (4)+2+dly_tsk()
+lcd_dt8:
+	bset	LCD_RS			; RS=1
+	bra	_lcd_cd8:8
+
+;- lcd command 8bit -
+; entry	 r0l = command
+; return cary = 0:ok,1:ng(r0=error code)
+; break	 r0,er1
+; stack	 (4)+2+dly_tsk()
+lcd_cd8:
+	bclr	LCD_RS			; RS=0
+_lcd_cd8
+	bld	#4,r0l
+	bst	LCD_DB4
+	bld	#5,r0l
+	bst	LCD_DB5
+	bset	LCD_E			; E =1
+	bld	#6,r0l
+	bst	LCD_DB6
+	bld	#7,r0l
+	bst	LCD_DB7
+	bclr	LCD_E			; E =0
+	bld	#0,r0l
+	bst	LCD_DB4
+	bld	#1,r0l
+	bst	LCD_DB5
+	bset	LCD_E			; E =1
+	bld	#2,r0l
+	bst	LCD_DB6
+	bld	#3,r0l
+	bst	LCD_DB7
+	bclr	LCD_E			; E =0
+	;* wait 40+6 usec *
+	push.w	r0
+	mov.b	#(46*1000/125)/3,r0l	; 2 state = 125 usec at 16MHz
+lcd_cd8_0
+	dec.b	r0l			; 1 cycle 2 state
+	bne	lcd_cd8_0:8		; 2 cycle 4 state
+	pop.w	r0
+	cmp.b	#4,r0l
+	bhs	lcd_cd8_1:8
+	push.w	e0
+	sub.l	er0,er0			; wait 2msec
+	mov.b	#2+1,r0l		; +1 for interrupt timing
+	jsr	@_dly_tsk		;bsr	wait_n_msec:16
+	pop.w	e0
+	cmp.w	#1,r0
+	xorc	#B'00000001,ccr
+lcd_cd8_1
+	rts
+
+;t ;- delay task for test -
+;t ; entry	 er0 = delay time (x1msec)
+;t ; return r0 = 0:ok,other:error code
+;t ; break	 er0,er1
+;t ; stack	 (4)+4
+;t 	.import	_tmr_1ms
+;t _dly_tsk			;wait_n_msec:
+;t 	push	er2
+;t 	mov.l	@_tmr_1ms,er1
+;t _dly_tsk_0			;wait_n_msec_0
+;t 	mov.l	@_tmr_1ms,er2
+;t 	sub.l	er1,er2
+;t 	cmp.l	er0,er2
+;t 	bls	_dly_tsk_0:8	;wait_n_msec_0:8
+;t 	pop	er2
+;t 	sub.l	er0,er0		;+
+;t 	rts
+
+;- lcd put charactor -
+; entry	 r0l = code
+; return r0 = 0:ok,other:error code
+; break	 er0,er1
+; stack	 (4)+6+dly_tsk()
+	.export	_lcd_putc
+_lcd_putc:	; ER lcd_putc( char )
+	cmp.b	#" ",r0l
+	blo	_lcd_putc_3 ;:8
+	;* ESC ? *
+	mov.b	@lcd_esc,r0h
+	bne	_lcd_putc_esc
+	;* charactor *
+	cmp.b	#H'a0,r0l					;+ 00/2/27
+	bhs	_lcd_putc_000:8					;+ 00/2/27
+	bclr	#7,r0l	;<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+_lcd_putc_000
+	mov.b	@lcd_csr,r0h
+	cmp.b	#H'10,r0h
+	blo	_lcd_putc_2:8
+	beq	_lcd_putc_1:8
+	cmp.b	#H'28,r0h
+	blo	_lcd_putc_2:8
+	cmp.b	#H'40,r0h
+	blo	_lcd_putc_0:8
+	cmp.b	#H'50,r0h
+	blo	_lcd_putc_2:8
+	beq	_lcd_putc_1:8
+	cmp.b	#H'68,r0h
+	blo	_lcd_putc_2:8
+;*	;* new line *
+;*	mov.b	#H'0,r0h
+;*	bra	_lcd_putc_0a:8
+	;* CRLF *		;* ..
+	push.w	r0
+	bsr	_lcd_putc_3a:8
+	mov.w	r0,r0
+	bne	_lcd_putc_00:8
+	bsr	_lcd_putc_3b ;:8
+	mov.w	r0,r0
+	bne	_lcd_putc_00:8
+	pop.w	r0
+	mov.b	@lcd_csr,r0h
+	bra	_lcd_putc_2:8
+_lcd_putc_00
+	adds	#2,sp
+	rts			;.. *
+_lcd_putc_0
+	mov.b	#H'40,r0h
+_lcd_putc_0a
+	mov.w	r0,e0	; push r0
+	mov.b	#B'00000110,r0l		; shift off
+	bsr	lcd_cd8
+;-	bcs	_lcd_putc_2c:8		;- command >= 4 !
+	mov.b	#B'00000010,r0l		; cursor home
+	bsr	lcd_cd8
+	bcs	_lcd_putc_2c:8		; error !
+	mov.w	e0,r0
+	mov.b	r0h,r0l
+	or.b	#B'10000000,r0l		; cursor set
+	bra	_lcd_putc_1a:8
+	;* shift start *
+_lcd_putc_1
+	mov.w	r0,e0	; push r0
+	mov.b	#B'00000111,r0l		; shift on
+_lcd_putc_1a
+	bsr	lcd_cd8
+;-	bcs	_lcd_putc_2c:8		;- command >= 4 !
+	mov.w	e0,r0	; pop r0
+	;* put *
+_lcd_putc_2
+	inc.b	r0h
+	mov.b	r0h,@lcd_csr
+	dec.b	r0h
+	cmp.b	#H'40,r0h
+	blo	_lcd_putc_2a:8
+	add.b	#-(H'40-40),r0h
+_lcd_putc_2a
+	mov.l	#lcd_buf_1,er1
+	add.b	r0h,r1l
+	addx	#0,r1h
+	bcc	_lcd_putc_2b:8
+	inc.w	#1,e1
+_lcd_putc_2b
+	mov.b	r0l,@er1
+	bsr	lcd_dt8
+	bcs	_lcd_putc_2c:8	; error !
+	xor.w	r0,r0
+_lcd_putc_2c
+	rts
+	;* command *
+_lcd_putc_3
+	cmp.b	#H'0d,r0l
+	beq	_lcd_putc_3a:8	; CR
+	cmp.b	#H'0a,r0l
+	beq	_lcd_putc_3b:8	; LF
+	cmp.b	#H'1b,r0l
+	beq	_lcd_putc_3c	; ESC
+	;
+	; ‰æ–Ê§ŒäƒR[ƒh‚Í‚Ü‚¾
+	;
+	rts
+	;* CR *
+_lcd_putc_3a
+	mov.b	@lcd_csr,r0h
+	and.b	#H'40,r0h
+_lcd_putc_3a0
+	mov.b	r0h,@lcd_csr
+	mov.w	r0,e0	; push r0h
+	mov.b	#B'00000110,r0l		; shift off
+	bsr	lcd_cd8
+;-	bcs	_lcd_putc_3a1:8		;- command >= 4 !
+	mov.b	#B'00000010,r0l		; cursor home
+	bsr	lcd_cd8
+	bcs	_lcd_putc_3a1:8		; error !
+	mov.w	e0,r0	; pop r0h
+	mov.b	r0h,r0l
+	or.b	#B'10000000,r0l		; cursor set
+	bsr	lcd_cd8
+;-	bcs	_lcd_putc_3a1:8		;- command >= 4 !
+	xor.w	r0,r0
+_lcd_putc_3a1
+	rts
+	;* LF *
+_lcd_putc_3b
+	mov.b	@lcd_csr,r0h
+	mov.b	r0h,r0l
+	and.b	#H'40,r0l
+	bne	_lcd_putc_3b0:8
+	or.b	#H'40,r0h
+	bra	_lcd_putc_3a0:8
+_lcd_putc_3b0
+	mov.b	#B'00000110,r0l		; shift off
+	bsr	lcd_cd8
+;-	bcs	_lcd_putc_3b5:8		;- command >= 4 !
+	mov.b	#B'10000000,r0l		; cursor set
+	bsr	lcd_cd8
+;-	bcs	_lcd_putc_3b5:8		;- command >= 4 !
+	;* line copy *
+	mov.w	#40,e0
+	mov.l	#lcd_buf_1,er1
+_lcd_putc_3b1
+	mov.b	#" ",r0h
+	mov.b	@(lcd_buf_2-lcd_buf_1,er1),r0l
+	mov.b	r0l,@er1
+	mov.b	r0h,@(lcd_buf_2-lcd_buf_1,er1)
+	push	er1
+	bsr	lcd_dt8
+	pop	er1
+	bcs	_lcd_putc_3b5:8	; error !
+	adds	#1,er1
+	dec.w	#1,e0
+	bne	_lcd_putc_3b1:8
+	;* line clear *
+	mov.w	#40,e0
+_lcd_putc_3b2
+	mov.b	#" ",r0l
+	bsr	lcd_dt8
+	bcs	_lcd_putc_3b5:8	; error !
+	dec.w	#1,e0
+	bne	_lcd_putc_3b2:8
+	;* cursor set *
+	mov.b	@lcd_csr,r0h
+	cmp.b	#H'10,r0h
+	blo	_lcd_putc_3b4:8
+	cmp.b	#H'40,r0h
+	blo	_lcd_putc_3b3:8
+	cmp.b	#H'50,r0h
+	blo	_lcd_putc_3b4:8
+_lcd_putc_3b3
+	mov.w	r0,e0	; push r0h
+	mov.b	#B'00000111,r0l		; shift on
+	bsr	lcd_cd8
+;-	bcs	_lcd_putc_3b5:8		;- command >= 4 !
+	mov.w	e0,r0	; pop r0h
+_lcd_putc_3b4
+	mov.b	r0h,r0l
+	or.b	#B'10000000,r0l		; cursor set
+	bsr	lcd_cd8
+;-	bcs	_lcd_putc_3b5:8		;- command >= 4 !
+	xor.w	r0,r0
+_lcd_putc_3b5
+	rts
+	;* ESC *
+_lcd_putc_3c
+	mov.b	#1,r0l
+_lcd_putc_3c0
+	mov.b	r0l,@lcd_esc
+	sub.w	r0,r0
+	rts
+	;* ESC data *
+_lcd_putc_esc
+	sub.l	er1,er1
+	dec.b	r0h
+	mov.b	r0h,r1l
+	shll.l	er1
+	shll.l	er1
+	add.l	#_lcd_esc_tbl,er1
+	mov.l	@er1,er1
+	jmp	@er1
+_lcd_esc_tbl
+	;* decode *
+	.data.l	_lcd_esc_dat	;1
+	;* cursor move *
+	.data.l	_lcd_esc_csr	;2
+	.data.l	_lcd_esc_csr2	;3
+	;* cg ram *
+	.data.l	_lcd_esc_ram	;4
+	.data.l	_lcd_esc_ram2	;5
+	.align	2
+	;* ESC ? *
+_lcd_esc_dat
+	cmp.b	#"=",r0l
+	beq	_lcd_esc_dat_0:8
+	cmp.b	#"C",r0l
+	beq	_lcd_esc_dat_0a:8
+	mov.b	#0,r0l
+	bra	_lcd_putc_3c0:8
+_lcd_esc_dat_0
+	mov.b	#2,r0l
+	bra	_lcd_putc_3c0:8
+_lcd_esc_dat_0a
+	mov.b	#4,r0l
+	bra	_lcd_putc_3c0:8
+	;* ESC= ? *
+_lcd_esc_csr
+	mov.b	r0l,@lcd_buf
+	mov.b	#3,r0l
+	bra	_lcd_putc_3c0:8
+	;* ESC=l ? *
+_lcd_esc_csr2
+	mov.b	#0,r0h
+	mov.b	r0h,@lcd_esc
+	add.b	#-" ",r0l
+	cmp.b	#1,r0l
+	addx	#0,r0l
+	dec.b	r0l
+	cmp.b	#40,r0l
+	blo	_lcd_esc_csr2_0:8
+	mov.b	#0,r0l
+_lcd_esc_csr2_0
+	mov.b	@lcd_buf,r0h
+	add.b	#-" ",r0h
+	cmp.b	#1,r0h
+	addx	#0,r0h
+	dec.b	r0h
+	cmp.b	#2,r0h
+	blo	_lcd_esc_csr2_0a:8
+	mov.b	#0,r0h
+_lcd_esc_csr2_0a
+	bld	#0,r0h
+	bst	#6,r0l
+	mov.b	@lcd_csr,r0h
+	mov.b	r0l,@lcd_csr
+	bclr	#6,r0l
+	bclr	#6,r0h
+	cmp.b	#H'10,r0h
+	bhi	_lcd_esc_csr2_1:8
+	mov.b	#H'10,r0h
+	cmp.b	#H'10,r0l
+	bhi	_lcd_esc_csr2_1a:8
+	;* old <= 16, new <= 16 *	direct
+	bra	_lcd_esc_csr2_3:8
+	;* old > 16, new <= 16 *	shift
+	;* old > 16, new > 16 *		shift
+_lcd_esc_csr2_1
+	cmp.b	#H'10,r0l
+	bhs	_lcd_esc_csr2_1a:8
+	mov.b	#H'10,r0l
+	;* old <= 16, new > 16 *	shift
+_lcd_esc_csr2_1a
+	cmp.b	r0l,r0h
+	beq	_lcd_esc_csr2_2:8
+	mov.w	r0,e0 ; push r0
+	mov.b	#B'00011000,r0l
+	bist	#2,r0l
+	bsr	lcd_cd8
+;-	bcs	_lcd_putc_3b5:8		;- command >= 4 !
+	mov.w	e0,r0 ; pop r0
+	cmp.b	r0l,r0h
+	stc.w	ccr,@-sp
+	xorc	#B'00000001,ccr
+	addx	#0,r0l
+	ldc.w	@sp+,ccr
+	subx	#0,r0l
+	bra	_lcd_esc_csr2_1a:8
+_lcd_esc_csr2_2
+	mov.b	@lcd_csr,r0l
+	bclr	#6,r0l
+	cmp.b	#H'10,r0l
+	mov.b	#B'00000111,r0l		; shift on
+	bist	#0,r0l
+	bsr	lcd_cd8
+;-	bcs	_lcd_putc_3b5:8		;- command >= 4 !
+_lcd_esc_csr2_3
+	mov.b	@lcd_csr,r0l
+	or.b	#B'10000000,r0l		; cursor set
+	bsr	lcd_cd8
+;-	bcs	_lcd_putc_3b5:8		;- command >= 4 !
+	sub.w	r0,r0
+	rts
+	;* CG RAM *
+_lcd_esc_ram
+	or.b	#B'01000000,r0l
+	bsr	lcd_cd8
+;-	bcs	_lcd_putc_3b5:8		;- command >= 4 !
+	mov.b	#5,r0l
+	bra	_lcd_putc_3c0 ;:8
+	;* CG DATA *
+_lcd_esc_ram2
+	cmp.b	#H'ff,r0l
+	beq	_lcd_esc_ram2_0:8
+	bclr	#7,r0l	;<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+	bsr	lcd_dt8
+	bcs	_lcd_putc_3b5 ;:8	; error !
+	xor.w	r0,r0
+	rts
+_lcd_esc_ram2_0
+	mov.b	#0,r0h
+	mov.b	r0h,@lcd_esc
+	bra	_lcd_esc_csr2_3:8
+
+;- lcd put stringth -
+; entry	 er0 = stringth top address (end NULL)
+; return r0 = 0:ok,other:error code
+; break	 er0,er1
+; stack	 (4)+14+dly_tsk()
+	.export	_lcd_puts
+_lcd_puts:	; ER lcd_puts( char * )
+	mov.l	er0,er1
+	mov.b	#0,r0h
+_lcd_puts_0
+	mov.b	@er1+,r0l
+	beq	_lcd_puts_1:8	; end !
+	push	er1
+	bsr	_lcd_putc
+	pop	er1
+	mov.w	r0,r0
+	beq	_lcd_puts_0:8
+_lcd_puts_1
+	rts
+
+	.end
+

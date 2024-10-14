@@ -1,0 +1,28 @@
+### for MAKE Version 4.0  Copyright (c) 1987, 1996 Borland International ###
+
+#=== macro's ===
+C38 = cc38h -CPU=300HA -I=\work\H8-3048F\h8c\include $<
+ASM = A38H $<-CPU=300HA:24 #-DEBUG
+LNK = L38H -SUBCOMMAND=$&.sub #-DEBUG
+CNV = C38H $<
+
+#=== roule's ===
+.c.obj:
+	$(C38)
+	@move $&.obj $:
+.mar.obj:
+	$(ASM) # > $&.tag
+.abs.mot:
+	$(CNV)
+
+#--- link's ---
+SYS =		sys\machine.obj sys\lcddrv.obj sys\dbglib.obj
+TRON =		src\kernel.obj
+
+#--- final target ---
+all:		$(TRON) $(SYS)
+
+#--- make .obj ---
+src\kernel.obj:	src\kernel.c include\kernel.h
+
+
